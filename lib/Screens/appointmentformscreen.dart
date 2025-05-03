@@ -244,5 +244,5 @@ class _AppointmentFormScreenState extends State<AppointmentFormScreen> {
         ),
       ),
     );
-  }
+}
 }
