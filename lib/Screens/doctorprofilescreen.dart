@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'appointmentformscreen.dart';
 
 class DoctorProfileScreen extends StatefulWidget {
@@ -17,12 +17,54 @@ class DoctorProfileScreen extends StatefulWidget {
 }
 
 class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
-  final double _userRating = 0.0;
+  double _userRating = 0.0;
   double? _distanceToDoctor;
   bool _isCalculatingDistance = false;
   String _doctorAddress = 'Loading address...';
+  bool _isSuspended = false;
 
-  // Add the missing _showMessage method
+  @override
+  void initState() {
+    super.initState();
+    _isSuspended = widget.doctor['status'] == 'suspended';
+    _getDoctorAddress();
+  }
+
+  Future<void> _getDoctorAddress() async {
+    final location = widget.doctor['location'] as Map<String, dynamic>?;
+    final docLat = location?['lat']?.toDouble();
+    final docLng = location?['lng']?.toDouble();
+
+    if (docLat == null || docLng == null) {
+      setState(() {
+        _doctorAddress = 'Location not available';
+      });
+      return;
+    }
+
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(docLat, docLng);
+      if (placemarks.isNotEmpty) {
+        final place = placemarks.first;
+        final address = [
+          if (place.street != null && place.street!.isNotEmpty) place.street,
+          if (place.locality != null && place.locality!.isNotEmpty) place.locality,
+          if (place.subAdministrativeArea != null && place.subAdministrativeArea!.isNotEmpty) place.subAdministrativeArea,
+          if (place.administrativeArea != null && place.administrativeArea!.isNotEmpty) place.administrativeArea,
+        ].where((part) => part != null).join(', ');
+
+        setState(() {
+          _doctorAddress = address.isNotEmpty ? address : 'Location available (no address)';
+        });
+      }
+    } catch (e) {
+      debugPrint("Error getting address: $e");
+      setState(() {
+        _doctorAddress = 'Location available (address unknown)';
+      });
+    }
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -33,7 +75,6 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
     );
   }
 
-  // Add the missing _infoTile method
   Widget _infoTile(IconData icon, String label, String value) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -44,21 +85,9 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 12,
-                ),
-              ),
+              Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
               const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                ),
-              ),
+              Text(value, style: const TextStyle(color: Colors.white, fontSize: 14)),
             ],
           ),
         ),
@@ -66,7 +95,6 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
     );
   }
 
-  // Add the missing _showRatingDialog method
   void _showRatingDialog() {
     double tempRating = _userRating;
 
@@ -103,15 +131,11 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
             TextButton(
               onPressed: () async {
                 setState(() {
-                  // _userRating is final, so we can't change it
-                  // Consider using a different variable if you need to track user rating
+                  _userRating = tempRating;
                 });
 
                 final docRef = FirebaseFirestore.instance
@@ -133,6 +157,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                 });
 
                 Navigator.pop(context);
+                _showMessage("Rating submitted successfully!");
               },
               child: const Text("Submit"),
             ),
@@ -142,77 +167,16 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
     );
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _getDoctorAddress();
-  }
-
-  Future<void> _getDoctorAddress() async {
-    final docLat = widget.doctor['latitude']?.toDouble();
-    final docLng = widget.doctor['longitude']?.toDouble();
-
-    if (docLat == null || docLng == null) {
-      setState(() {
-        _doctorAddress = 'Location not available';
-      });
-      return;
-    }
-
-    try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(docLat, docLng);
-      if (placemarks.isNotEmpty) {
-        final place = placemarks.first;
-        final address = [
-          if (place.street != null && place.street!.isNotEmpty) place.street,
-          if (place.locality != null && place.locality!.isNotEmpty) place.locality,
-          if (place.subAdministrativeArea != null && place.subAdministrativeArea!.isNotEmpty) 
-            place.subAdministrativeArea,
-          if (place.administrativeArea != null && place.administrativeArea!.isNotEmpty) 
-            place.administrativeArea,
-        ].where((part) => part != null).join(', ');
-
-        setState(() {
-          _doctorAddress = address.isNotEmpty ? address : 'Location available (no address)';
-        });
-      }
-    } catch (e) {
-      debugPrint("Error getting address: $e");
-      setState(() {
-        _doctorAddress = 'Location available (address unknown)';
-      });
-    }
-  }
-
-  Future<void> _launchDirections(double? userLat, double? userLng) async {
-    final docLat = widget.doctor['latitude']?.toDouble();
-    final docLng = widget.doctor['longitude']?.toDouble();
+  Future<void> _launchDirections() async {
+    final location = widget.doctor['location'] as Map<String, dynamic>?;
+    final docLat = location?['lat']?.toDouble();
+    final docLng = location?['lng']?.toDouble();
 
     if (docLat == null || docLng == null) {
       _showMessage("Doctor location not available");
       return;
     }
 
-    String origin = '';
-    if (userLat != null && userLng != null) {
-      origin = '$userLat,$userLng';
-    }
-
-    final url = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1'
-      '&origin=$origin'
-      '&destination=$docLat,$docLng'
-      '&travelmode=driving'
-    );
-
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url);
-    } else {
-      _showMessage("Could not launch maps application");
-    }
-  }
-
-  Future<void> _calculateDistanceAndLaunchDirections() async {
     setState(() {
       _isCalculatingDistance = true;
     });
@@ -238,31 +202,41 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
         return;
       }
 
-      final userPosition = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+      final userPosition = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+
+      final distanceInMeters = Geolocator.distanceBetween(
+        userPosition.latitude,
+        userPosition.longitude,
+        docLat,
+        docLng,
       );
-      
-      final docLat = widget.doctor['latitude']?.toDouble();
-      final docLng = widget.doctor['longitude']?.toDouble();
 
-      if (docLat != null && docLng != null) {
-        final distanceInMeters = Geolocator.distanceBetween(
-          userPosition.latitude,
-          userPosition.longitude,
-          docLat,
-          docLng,
-        );
+      setState(() {
+        _distanceToDoctor = distanceInMeters / 1000; // km
+      });
 
-        setState(() {
-          _distanceToDoctor = distanceInMeters / 1000; // convert to km
-        });
-        
-        await _launchDirections(userPosition.latitude, userPosition.longitude);
+      final url = Uri.parse(
+        'https://www.google.com/maps/dir/?api=1'
+        '&origin=${userPosition.latitude},${userPosition.longitude}'
+        '&destination=$docLat,$docLng'
+        '&travelmode=driving',
+      );
+
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url);
+      } else {
+        _showMessage("Could not launch maps application");
       }
     } catch (e) {
       debugPrint("Error getting location: $e");
-      // Fallback to launching directions without user location
-      await _launchDirections(null, null);
+      final fallbackUrl = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$docLat,$docLng',
+      );
+      if (await canLaunchUrl(fallbackUrl)) {
+        await launchUrl(fallbackUrl);
+      } else {
+        _showMessage("Could not launch maps application");
+      }
     } finally {
       setState(() {
         _isCalculatingDistance = false;
@@ -272,12 +246,16 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    double ratingSum = widget.doctor['ratingSum']?.toDouble() ?? 0.0;
-    int ratingCount = widget.doctor['ratingCount']?.toInt() ?? 0;
-    double initialRating = ratingCount > 0 ? ratingSum / ratingCount : 0.0;
-    double displayRating = _userRating > 0 ? _userRating : initialRating;
+    final ratingSum = widget.doctor['ratingSum']?.toDouble() ?? 0.0;
+    final ratingCount = widget.doctor['ratingCount']?.toInt() ?? 0;
+    final initialRating = ratingCount > 0 ? ratingSum / ratingCount : 0.0;
+    final displayRating = _userRating > 0 ? _userRating : initialRating;
 
-    final String? imageBase64 = widget.doctor['image'];
+    final imageBase64 = widget.doctor['image'] as String?;
+    String? pureBase64;
+    if (imageBase64 != null && imageBase64.contains(',')) {
+      pureBase64 = imageBase64.split(',').last;
+    }
 
     return Scaffold(
       body: Container(
@@ -285,71 +263,53 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.blueGrey.shade900,
-              Colors.black87,
-            ],
+            colors: [Colors.blueGrey.shade900, Colors.black87],
           ),
         ),
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 40.0, left: 16.0),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
+            const SizedBox(height: 40),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
             ),
-            
+            if (_isSuspended)
+              Container(
+                margin: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade800,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text("This doctor is currently suspended", style: TextStyle(color: Colors.white)),
+              ),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   children: [
-                    const SizedBox(height: 10),
                     CircleAvatar(
                       radius: 60,
                       backgroundColor: Colors.grey.shade800,
-                      backgroundImage: imageBase64 != null && imageBase64.isNotEmpty
-                          ? MemoryImage(base64Decode(imageBase64.contains(',') 
-                              ? imageBase64.split(',').last 
-                              : imageBase64))
-                          : null,
-                      child: imageBase64 == null || imageBase64.isEmpty
-                          ? const Icon(Icons.person, size: 60, color: Colors.white70)
-                          : null,
+                      backgroundImage: pureBase64 != null ? MemoryImage(base64Decode(pureBase64)) : null,
+                      child: pureBase64 == null ? const Icon(Icons.person, size: 60, color: Colors.white70) : null,
                     ),
                     const SizedBox(height: 20),
-                    Text(
-                      widget.doctor['name'] ?? 'Dr. Unknown',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold),
-                    ),
+                    Text(widget.doctor['name'] ?? 'Dr. Unknown', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    Text(
-                      widget.doctor['specialty'] ?? 'Specialist',
-                      style: const TextStyle(color: Colors.white70, fontSize: 16),
-                    ),
+                    Text(widget.doctor['specialty'] ?? 'Specialist', style: const TextStyle(color: Colors.white70, fontSize: 16)),
                     const SizedBox(height: 8),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Icon(Icons.star, color: Colors.amber, size: 20),
                         const SizedBox(width: 4),
-                        Text(
-                          displayRating.toStringAsFixed(1),
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        Text(
-                          ' ($ratingCount)',
-                          style: const TextStyle(color: Colors.white54),
-                        ),
+                        Text(displayRating.toStringAsFixed(1), style: const TextStyle(color: Colors.white)),
+                        Text(' ($ratingCount)', style: const TextStyle(color: Colors.white54)),
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -360,13 +320,11 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           children: [
-                            _infoTile(Icons.email, "Email", widget.doctor['email'] ?? 'doctor@example.com'),
+                            _infoTile(Icons.email, "Email", widget.doctor['email'] ?? 'No email provided'),
                             const Divider(color: Colors.white24, height: 20),
-                            _infoTile(Icons.phone, "Phone", widget.doctor['phone'] ?? '+267 72 111 223'),
+                            _infoTile(Icons.phone, "Phone", widget.doctor['phone'] ?? 'No phone provided'),
                             const Divider(color: Colors.white24, height: 20),
                             _infoTile(Icons.location_on, "Location", _doctorAddress),
-                            const Divider(color: Colors.white24, height: 20),
-                            _infoTile(Icons.calendar_today, "Availability", "Mon - Sat, 8AM - 5PM"),
                             if (_distanceToDoctor != null)
                               Column(
                                 children: [
@@ -378,12 +336,10 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
                   ],
                 ),
               ),
             ),
-            
             Padding(
               padding: const EdgeInsets.all(20.0),
               child: Column(
@@ -392,33 +348,35 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton(
-                      onPressed: () {
-                        if (FirebaseAuth.instance.currentUser != null &&
-                            !FirebaseAuth.instance.currentUser!.isAnonymous) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AppointmentFormScreen(
-                                doctorId: widget.doctor['id'],
-                                doctorName: widget.doctor['name'],
-                                doctorEmail: widget.doctor['email'],
-                              ),
-                            ),
-                          );
-                        } else {
-                          _showMessage("Login required to book appointment.");
-                        }
-                      },
+                      onPressed: _isSuspended
+                          ? null
+                          : () {
+                              if (FirebaseAuth.instance.currentUser != null &&
+                                  !FirebaseAuth.instance.currentUser!.isAnonymous) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => AppointmentFormScreen(
+                                      doctorId: widget.doctor['id'],
+                                      doctorName: widget.doctor['name'],
+                                      doctorEmail: widget.doctor['email'],
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                _showMessage("Login required to book appointment.");
+                              }
+                            },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.tealAccent.shade400,
+                        backgroundColor: _isSuspended ? Colors.grey : Colors.tealAccent.shade400,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      child: const Text(
-                        "BOOK APPOINTMENT",
+                      child: Text(
+                        _isSuspended ? "APPOINTMENTS SUSPENDED" : "BOOK APPOINTMENT",
                         style: TextStyle(
-                          color: Colors.black,
+                          color: _isSuspended ? Colors.white : Colors.black,
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
@@ -440,10 +398,10 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                                 _showMessage("Login required to rate doctor.");
                               }
                             },
-                            icon: const Icon(Icons.star_rate, size: 20),
+                            icon: const Icon(Icons.star, size: 20),
                             label: const Text("RATE"),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange.shade700,
+                              backgroundColor: Colors.orange,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
@@ -456,9 +414,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                         child: SizedBox(
                           height: 50,
                           child: ElevatedButton.icon(
-                            onPressed: _isCalculatingDistance
-                                ? null
-                                : _calculateDistanceAndLaunchDirections,
+                            onPressed: _launchDirections,
                             icon: _isCalculatingDistance
                                 ? const SizedBox(
                                     width: 20,
@@ -471,7 +427,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                                 : const Icon(Icons.directions, size: 20),
                             label: const Text("DIRECTIONS"),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue.shade700,
+                              backgroundColor: Colors.blue,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),

@@ -271,7 +271,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   ),
                 ),
               );
-            }).toList(),
+            }),
             if (_appointments.isEmpty) const Padding(
               padding: EdgeInsets.only(top: 8.0),
               child: Text("No appointments found."),

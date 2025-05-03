@@ -30,8 +30,8 @@ class _AppointmentFormScreenState extends State<AppointmentFormScreen> {
 
   // EmailJS setup
   static const String _emailJSServiceId = 'service_dhwmwdl';
-  static const String _emailJSTemplateIdUser = 'template_f03vjjn'; // User confirmation template
-  static const String _emailJSTemplateIdDoctor = 'template_eh3zddf'; // Doctor notification template
+  static const String _emailJSTemplateIdUser = 'template_f03vjjn'; // User confirmation
+  static const String _emailJSTemplateIdDoctor = 'template_eh3zddf'; // Doctor notification
   static const String _emailJSUserId = 'ZfKV3oiAuyxuyPLH8';
   static const String _emailJSAPIUrl = 'https://api.emailjs.com/api/v1.0/email/send';
 
@@ -73,7 +73,7 @@ class _AppointmentFormScreenState extends State<AppointmentFormScreen> {
 
       if (response.statusCode != 200) {
         debugPrint('EmailJS error: ${response.statusCode} - ${response.body}');
-        throw Exception('Failed to send email: ${response.statusCode}');
+        throw Exception('Failed to send email');
       }
     } catch (e) {
       debugPrint('Failed to send email: $e');
@@ -102,7 +102,6 @@ class _AppointmentFormScreenState extends State<AppointmentFormScreen> {
     try {
       final appointmentRef = FirebaseFirestore.instance.collection('appointments');
 
-      // Check if doctor is already booked at the same time
       final existing = await appointmentRef
           .where('doctorId', isEqualTo: widget.doctorId)
           .where('date', isEqualTo: date)
@@ -118,14 +117,12 @@ class _AppointmentFormScreenState extends State<AppointmentFormScreen> {
         return;
       }
 
-      // Fetch user data
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       final userData = userDoc.data() ?? {};
       final userEmail = userData['email'] ?? user.email ?? 'no-email@example.com';
       final userPhone = userData['phone'] ?? 'Not provided';
       final userName = userData['fullName'] ?? 'Patient';
 
-      // Save appointment in Firestore
       await appointmentRef.add({
         'userId': user.uid,
         'doctorId': widget.doctorId,
@@ -142,7 +139,6 @@ class _AppointmentFormScreenState extends State<AppointmentFormScreen> {
         'status': 'scheduled',
       });
 
-      // Send confirmation to user (from doctor's email)
       await _sendEmail(
         recipientEmail: userEmail,
         fromEmail: widget.doctorEmail,
@@ -153,7 +149,6 @@ class _AppointmentFormScreenState extends State<AppointmentFormScreen> {
         templateId: _emailJSTemplateIdUser,
       );
 
-      // Send notification to doctor (from user's email)
       await _sendEmail(
         recipientEmail: widget.doctorEmail,
         fromEmail: userEmail,
@@ -198,51 +193,98 @@ class _AppointmentFormScreenState extends State<AppointmentFormScreen> {
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              TextFormField(
-                controller: _purposeController,
-                decoration: const InputDecoration(labelText: "Purpose", border: OutlineInputBorder()),
-                validator: (value) => value == null || value.isEmpty ? 'Enter purpose' : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _dateController,
-                decoration: const InputDecoration(labelText: "Date (YYYY-MM-DD)", border: OutlineInputBorder()),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d-]'))],
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Enter date';
-                  if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) {
-                    return 'Format must be YYYY-MM-DD';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _timeController,
-                decoration: const InputDecoration(labelText: "Time (e.g. 10:00 AM)", border: OutlineInputBorder()),
-                validator: (value) => value == null || value.isEmpty ? 'Enter time' : null,
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                  onPressed: isLoading ? null : bookAppointment,
-                  child: isLoading
-                      ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                      : const Text("Confirm Appointment", style: TextStyle(fontSize: 16)),
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Decorative Doctor Header
+            Card(
+              color: const Color(0xFFE3F2FD),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    const Icon(Icons.person, size: 48, color: Colors.blue),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.doctorName,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.doctorEmail,
+                            style: const TextStyle(fontSize: 14, color: Colors.black54),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 24),
+
+            // Appointment Form
+            Expanded(
+              child: Form(
+                key: _formKey,
+                child: ListView(
+                  children: [
+                    TextFormField(
+                      controller: _purposeController,
+                      decoration: const InputDecoration(labelText: "Purpose", border: OutlineInputBorder()),
+                      validator: (value) => value == null || value.isEmpty ? 'Enter purpose' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _dateController,
+                      decoration: const InputDecoration(labelText: "Date (YYYY-MM-DD)", border: OutlineInputBorder()),
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d-]'))],
+                      validator: (value) {
+                        if (value == null || value.isEmpty) return 'Enter date';
+                        if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) {
+                          return 'Format must be YYYY-MM-DD';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _timeController,
+                      decoration: const InputDecoration(labelText: "Time (e.g. 10:00 AM)", border: OutlineInputBorder()),
+                      validator: (value) => value == null || value.isEmpty ? 'Enter time' : null,
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: isLoading ? null : bookAppointment,
+                        child: isLoading
+                            ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                            : const Text("Confirm Appointment", style: TextStyle(fontSize: 16)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
-}
+  }
 }

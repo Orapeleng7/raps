@@ -41,38 +41,48 @@ class _DoctorListScreenState extends State<DoctorListScreen> {
 
     if (shouldLogout == true) {
       await FirebaseAuth.instance.signOut();
-      if (context.mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const SplashScreen()),
-          (route) => false,
-        );
-      }
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const SplashScreen()),
+        (route) => false,
+      );
     }
   }
 
-  Future<String> getLocationName(double lat, double lng) async {
-    final key = '$lat,$lng';
+  Future<String> getLocationName(Map<String, dynamic>? location) async {
+    if (location == null) return 'Location not available';
+    
+    final docLat = location['lat']?.toDouble();
+    final docLng = location['lng']?.toDouble();
+    
+    if (docLat == null || docLng == null) return 'Location not available';
+    
+    final key = '$docLat,$docLng';
     if (locationCache.containsKey(key)) {
       return locationCache[key]!;
     }
+    
     try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      List<Placemark> placemarks = await placemarkFromCoordinates(docLat, docLng);
       if (placemarks.isNotEmpty) {
         final place = placemarks.first;
-        final name = [
-          place.street,
-          place.locality,
-          place.subAdministrativeArea,
-          place.administrativeArea
-        ].where((part) => part?.isNotEmpty ?? false).join(', ');
-        locationCache[key] = name;
-        return name;
+        final address = [
+          if (place.street != null && place.street!.isNotEmpty) place.street,
+          if (place.locality != null && place.locality!.isNotEmpty) place.locality,
+          if (place.subAdministrativeArea != null && place.subAdministrativeArea!.isNotEmpty) 
+            place.subAdministrativeArea,
+          if (place.administrativeArea != null && place.administrativeArea!.isNotEmpty) 
+            place.administrativeArea,
+        ].where((part) => part != null).join(', ');
+
+        locationCache[key] = address.isNotEmpty ? address : 'Location available';
+        return locationCache[key]!;
       }
     } catch (e) {
-      debugPrint("Error getting location name: $e");
+      debugPrint("Error getting address: $e");
     }
-    return 'Location not specified';
+    return 'Location available';
   }
 
   @override
@@ -83,6 +93,7 @@ class _DoctorListScreenState extends State<DoctorListScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         backgroundColor: Colors.indigo[900],
         title: const Text("Find Doctors", style: TextStyle(
           color: Colors.white,
@@ -92,13 +103,14 @@ class _DoctorListScreenState extends State<DoctorListScreen> {
         centerTitle: true,
         elevation: 0,
         actions: [
-          if (!isGuest) IconButton(
-            icon: const Icon(Icons.person, color: Colors.white),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const UserProfileScreen()),
+          if (!isGuest)
+            IconButton(
+              icon: const Icon(Icons.person, color: Colors.white),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const UserProfileScreen()),
+              ),
             ),
-          ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
             onPressed: _confirmLogout,
@@ -115,7 +127,7 @@ class _DoctorListScreenState extends State<DoctorListScreen> {
                 borderRadius: BorderRadius.circular(15),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withAlpha(25),
                     blurRadius: 10,
                     offset: const Offset(0, 5),
                   ),
@@ -187,15 +199,12 @@ class _DoctorListScreenState extends State<DoctorListScreen> {
                         : 0.0;
 
                     final String imageBase64 = doc['image'] ?? '';
-                    final double? lat = doc['lat']?.toDouble();
-                    final double? lng = doc['lng']?.toDouble();
+                    final location = doc['location'] as Map<String, dynamic>?;
 
                     return FutureBuilder<String>(
-                      future: (lat != null && lng != null)
-                          ? getLocationName(lat, lng)
-                          : Future.value('Location not specified'),
+                      future: getLocationName(location),
                       builder: (context, locationSnapshot) {
-                        final locationName = locationSnapshot.data ?? 'Loading...';
+                        final locationName = locationSnapshot.data ?? 'Loading location...';
                         final matchesSearch =
                             (doc['name'] ?? '').toLowerCase().contains(searchQuery) ||
                             (doc['specialty'] ?? '').toLowerCase().contains(searchQuery) ||
@@ -204,14 +213,13 @@ class _DoctorListScreenState extends State<DoctorListScreen> {
                         if (!matchesSearch) return const SizedBox.shrink();
 
                         return Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           child: Container(
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
+                                  color: Colors.black.withAlpha(25),
                                   blurRadius: 10,
                                   offset: const Offset(0, 5),
                                 ),
@@ -328,7 +336,7 @@ class _DoctorListScreenState extends State<DoctorListScreen> {
                                               borderRadius: BorderRadius.circular(12),
                                             ),
                                             child: Text(
-                                              '${ratingCount} reviews',
+                                              '$ratingCount reviews',
                                               style: TextStyle(
                                                 color: Colors.indigo[900],
                                                 fontSize: 10,

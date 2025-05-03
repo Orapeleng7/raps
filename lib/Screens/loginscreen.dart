@@ -67,7 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => isLoading = true);
 
     try {
-      await FirebaseAuth.instance.signInAnonymously(); // <-- Anonymous Sign-in
+      await FirebaseAuth.instance.signInAnonymously();
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
@@ -87,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> navigateToRegister() async {
     setState(() => isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 500)); // Simulated loading
+    await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     setState(() => isLoading = false);
     Navigator.push(
@@ -143,12 +143,18 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Login")),
+      resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(24.0),
+          SingleChildScrollView(
+            padding: EdgeInsets.only(
+              left: 24.0,
+              right: 24.0,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24.0,
+              top: 48.0,
+            ),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Icon(Icons.person, size: 80),
                 const SizedBox(height: 24),
@@ -171,10 +177,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: const Text("Forgot Password?"),
                   ),
                 ),
-                const SizedBox(height: 8),
                 if (error.isNotEmpty)
-                  Text(error, style: const TextStyle(color: Colors.red)),
-                const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Text(
+                      error,
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ),
+                const SizedBox(height: 8),
                 ElevatedButton(
                   onPressed: isLoading ? null : login,
                   child: const Text("Login"),
@@ -193,7 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           if (isLoading)
             Container(
-              color: Colors.black.withAlpha(77), // ~30% opacity
+              color: Colors.black.withAlpha(77),
               child: const Center(child: CircularProgressIndicator()),
             ),
         ],
