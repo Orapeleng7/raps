@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
@@ -21,6 +21,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   bool _isLoading = true;
   bool _isSaving = false;
+
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _appointments = [];
 
   @override
@@ -44,14 +45,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         _genderController.text = data['gender'] ?? '';
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading profile: $e')));
-      }
+      _showSnackBar('Error loading profile: $e');
     }
 
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
+    if (mounted) setState(() => _isLoading = false);
   }
 
   Future<void> _loadAppointments() async {
@@ -64,56 +61,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           .where('userId', isEqualTo: user.uid)
           .orderBy('date')
           .get();
-
-      if (mounted) {
-        setState(() => _appointments = snapshot.docs);
-      }
+      if (mounted) setState(() => _appointments = snapshot.docs);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading appointments: $e')));
-      }
+      _showSnackBar('Error loading appointments: $e');
     }
   }
 
   Future<void> _deleteAppointment(String appointmentId) async {
     try {
       await _firestore.collection('appointments').doc(appointmentId).delete();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Appointment deleted successfully')),
-        );
-        _loadAppointments(); // Refresh the list
-      }
+      _showSnackBar('Appointment deleted');
+      _loadAppointments(); // Refresh list
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete appointment: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _confirmDeleteAppointment(String appointmentId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Delete'),
-        content: const Text('Are you sure you want to cancel this appointment?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Yes'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      await _deleteAppointment(appointmentId);
+      _showSnackBar('Failed to delete appointment: $e');
     }
   }
 
@@ -121,7 +81,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSaving = true);
-
     final user = _auth.currentUser;
     if (user == null) return;
 
@@ -132,55 +91,35 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         'gender': _genderController.text.trim(),
       });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated.')));
-      }
+      _showSnackBar('Profile updated');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
-      }
+      _showSnackBar('Failed to save: $e');
     }
 
-    if (mounted) {
-      setState(() => _isSaving = false);
+    if (mounted) setState(() => _isSaving = false);
+  }
+
+  void _changePassword() async {
+    final user = _auth.currentUser;
+    if (user == null || user.email == null) return;
+
+    try {
+      await _auth.sendPasswordResetEmail(email: user.email!);
+      _showSnackBar('Password reset email sent to ${user.email}');
+    } catch (e) {
+      _showSnackBar('Failed to send reset email: $e');
     }
   }
 
-  Future<void> _changePassword() async {
-    final controller = TextEditingController();
+  void _showSnackBar(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
 
-    await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Change Password"),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: "New Password"),
-        ),
-        actions: [
-          TextButton(
-            child: const Text("Cancel"),
-            onPressed: () => Navigator.pop(context),
-          ),
-          TextButton(
-            child: const Text("Update"),
-            onPressed: () async {
-              try {
-                await _auth.currentUser?.updatePassword(controller.text.trim());
-                if (!mounted) return;
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Password changed.")));
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed: $e")));
-                }
-              }
-            },
-          ),
-        ],
-      ),
-    );
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return "Good Morning ☀️";
+    if (hour < 17) return "Good Afternoon 🌤️";
+    return "Good Evening 🌙";
   }
 
   @override
@@ -199,85 +138,120 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text("My Profile")),
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text("My Profile", style: TextStyle(color: Colors.white)),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: ListView(
           children: [
+            Center(
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Text(_greeting(),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
             Form(
               key: _formKey,
               child: Column(
                 children: [
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(labelText: "Full Name"),
-                    validator: (val) => val == null || val.isEmpty ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _emailController,
-                    readOnly: true,
-                    decoration: const InputDecoration(labelText: "Email"),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _phoneController,
-                    decoration: const InputDecoration(labelText: "Phone"),
-                    validator: (val) => val == null || val.length < 7 ? 'Invalid phone' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _genderController,
-                    decoration: const InputDecoration(labelText: "Gender"),
-                  ),
-                  const SizedBox(height: 24),
+                  _buildInput(_nameController, "Full Name", true),
+                  _buildInput(_emailController, "Email", false, readOnly: true),
+                  _buildInput(_phoneController, "Phone", true),
+                  _buildInput(_genderController, "Gender", false),
+                  const SizedBox(height: 20),
                   ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.black),
                     onPressed: _isSaving ? null : _saveProfile,
                     child: _isSaving
-                        ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white))
-                        : const Text("Save Changes"),
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white))
+                        : const Text("Save Changes", style: TextStyle(color: Colors.white)),
                   ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
+                  TextButton(
                     onPressed: _changePassword,
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                    child: const Text("Change Password"),
+                    child: const Text("Change Password", style: TextStyle(color: Colors.blue)),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 30),
-            const Text("Appointments", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const Divider(),
+            const Text("Appointments", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const Divider(color: Colors.black),
             ..._appointments.map((doc) {
               final a = doc.data();
-              return Card(
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
                 margin: const EdgeInsets.symmetric(vertical: 8),
-                child: ListTile(
-                  leading: const Icon(Icons.calendar_today),
-                  title: Text(a['doctorName'] ?? 'Doctor'),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('📅 ${a['date']} at ${a['time']}'),
-                      Text('📍 ${a['location']}'),
-                      Text('📩 Doctor: ${a['doctorEmail']}'),
-                      Text('📝 Purpose: ${a['purpose']}'),
-                    ],
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () => _confirmDeleteAppointment(doc.id),
-                  ),
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(a['doctorName'] ?? 'Doctor',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 6),
+                    Text('📅 ${a['date']} at ${a['time']}'),
+                    Text('📍 ${a['location']}'),
+                    Text('📩 ${a['doctorEmail']}'),
+                    Text('📝 ${a['purpose']}'),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => _deleteAppointment(doc.id),
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        label: const Text("Delete", style: TextStyle(color: Colors.red)),
+                      ),
+                    ),
+                  ],
                 ),
               );
             }),
-            if (_appointments.isEmpty) const Padding(
-              padding: EdgeInsets.only(top: 8.0),
-              child: Text("No appointments found."),
-            ),
+            if (_appointments.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: Text("No appointments yet.", style: TextStyle(color: Colors.black54)),
+              ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildInput(TextEditingController controller, String label, bool required, {bool readOnly = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: TextFormField(
+        controller: controller,
+        readOnly: readOnly,
+        validator: required ? (val) => val == null || val.isEmpty ? 'Required' : null : null,
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(color: Colors.black),
+          filled: true,
+          fillColor: Colors.grey[100],
+          enabledBorder: OutlineInputBorder(
+            borderSide: const BorderSide(color: Colors.black),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: const BorderSide(color: Colors.black),
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        style: const TextStyle(color: Colors.black),
       ),
     );
   }

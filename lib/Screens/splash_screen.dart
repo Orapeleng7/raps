@@ -41,8 +41,8 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final Color backgroundColor = const Color(0xFFE3F2FD); // light blue
-    final Color primaryColor = Colors.blue[900]!; // dark blue
+    const Color backgroundColor = Colors.white;
+    const Color textColor = Colors.black;
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -56,17 +56,18 @@ class _SplashScreenState extends State<SplashScreen> {
             child: PopupMenuButton<String>(
               tooltip: 'Profile Info',
               offset: const Offset(0, 50),
-              child: Row(
+              color: Colors.white,
+              icon: Row(
                 children: [
                   Text(
                     "$name | $studentId",
-                    style: TextStyle(
-                      color: primaryColor,
+                    style: const TextStyle(
+                      color: textColor,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Icon(Icons.arrow_drop_down, color: primaryColor),
+                  const Icon(Icons.arrow_drop_down, color: textColor),
                 ],
               ),
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -89,32 +90,33 @@ class _SplashScreenState extends State<SplashScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
+              const Text(
                 "HealthMate",
                 style: TextStyle(
                   fontSize: 36,
                   fontWeight: FontWeight.bold,
-                  color: primaryColor,
+                  color: textColor,
                   letterSpacing: 1.5,
                 ),
               ),
               const SizedBox(height: 24),
-              Icon(
+              const Icon(
                 Icons.health_and_safety,
                 size: 80,
-                color: primaryColor,
+                color: textColor,
               ),
               const SizedBox(height: 40),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 12),
+                  backgroundColor: textColor,
+                  foregroundColor: backgroundColor,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   textStyle: const TextStyle(
                       fontSize: 16, fontWeight: FontWeight.w600),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 onPressed: signInAsGuest,
                 child: const Text("Continue as Guest"),
@@ -122,15 +124,16 @@ class _SplashScreenState extends State<SplashScreen> {
               const SizedBox(height: 12),
               OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.blue,
-                  side: const BorderSide(color: Colors.blue),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 12),
+                  backgroundColor: backgroundColor,
+                  foregroundColor: textColor,
+                  side: const BorderSide(color: textColor),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   textStyle: const TextStyle(
                       fontSize: 16, fontWeight: FontWeight.w600),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 onPressed: () {
                   Navigator.push(
