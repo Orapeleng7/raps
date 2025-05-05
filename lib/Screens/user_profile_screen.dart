@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
@@ -18,10 +22,13 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final ImagePicker _picker = ImagePicker();
 
+  String? _profileImageUrl;
+  File? _selectedImage;
   bool _isLoading = true;
   bool _isSaving = false;
-
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _appointments = [];
 
   @override
@@ -43,6 +50,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         _emailController.text = data['email'] ?? user.email ?? '';
         _phoneController.text = data['phone'] ?? '';
         _genderController.text = data['gender'] ?? '';
+        _profileImageUrl = data['profileImageUrl'];
       }
     } catch (e) {
       _showSnackBar('Error loading profile: $e');
@@ -59,25 +67,48 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       final snapshot = await _firestore
           .collection('appointments')
           .where('userId', isEqualTo: user.uid)
-          .orderBy('date')
           .get();
-      if (mounted) setState(() => _appointments = snapshot.docs);
+
+      setState(() {
+        _appointments = snapshot.docs;
+      });
     } catch (e) {
       _showSnackBar('Error loading appointments: $e');
     }
   }
 
-  Future<void> _deleteAppointment(String appointmentId) async {
-    try {
-      await _firestore.collection('appointments').doc(appointmentId).delete();
-      _showSnackBar('Appointment deleted');
-      _loadAppointments(); // Refresh list
-    } catch (e) {
-      _showSnackBar('Failed to delete appointment: $e');
+  Future<void> _pickImage() async {
+    final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
+    if (picked != null) {
+      setState(() {
+        _selectedImage = File(picked.path);
+      });
+      await _uploadProfileImage();
     }
   }
 
-  Future<void> _saveProfile() async {
+  Future<void> _uploadProfileImage() async {
+    final user = _auth.currentUser;
+    if (user == null || _selectedImage == null) return;
+
+    try {
+      final ref = _storage.ref().child('profile_pics/${user.uid}.jpg');
+      await ref.putFile(_selectedImage!);
+      final url = await ref.getDownloadURL();
+
+      await _firestore.collection('users').doc(user.uid).update({'profileImageUrl': url});
+
+      setState(() {
+        _profileImageUrl = url;
+      });
+
+      _showSnackBar('Profile image updated!');
+    } catch (e) {
+      _showSnackBar('Failed to upload image: $e');
+    }
+  }
+
+  Future<void> _saveUserProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSaving = true);
@@ -87,171 +118,113 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     try {
       await _firestore.collection('users').doc(user.uid).update({
         'fullName': _nameController.text.trim(),
+        'email': _emailController.text.trim(),
         'phone': _phoneController.text.trim(),
         'gender': _genderController.text.trim(),
       });
 
-      _showSnackBar('Profile updated');
+      _showSnackBar('Profile updated!');
     } catch (e) {
-      _showSnackBar('Failed to save: $e');
+      _showSnackBar('Error saving profile: $e');
     }
 
-    if (mounted) setState(() => _isSaving = false);
+    setState(() => _isSaving = false);
   }
 
-  void _changePassword() async {
-    final user = _auth.currentUser;
-    if (user == null || user.email == null) return;
-
-    try {
-      await _auth.sendPasswordResetEmail(email: user.email!);
-      _showSnackBar('Password reset email sent to ${user.email}');
-    } catch (e) {
-      _showSnackBar('Failed to send reset email: $e');
-    }
-  }
-
-  void _showSnackBar(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  String _greeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return "Good Morning ☀️";
-    if (hour < 17) return "Good Afternoon 🌤️";
-    return "Good Evening 🌙";
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _phoneController.dispose();
-    _genderController.dispose();
-    super.dispose();
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        title: const Text('User Profile'),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text("My Profile", style: TextStyle(color: Colors.white)),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ListView(
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
           children: [
             Center(
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  Text(_greeting(),
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ],
+              child: GestureDetector(
+                onTap: _pickImage,
+                child: CircleAvatar(
+                  radius: 60,
+                  backgroundColor: Colors.grey[300],
+                  backgroundImage: _selectedImage != null
+                      ? FileImage(_selectedImage!)
+                      : (_profileImageUrl != null
+                          ? NetworkImage(_profileImageUrl!) as ImageProvider
+                          : const AssetImage('assets/default_avatar.png')),
+                  child: _profileImageUrl == null && _selectedImage == null
+                      ? const Icon(Icons.camera_alt, size: 40, color: Colors.white70)
+                      : null,
+                ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Form(
               key: _formKey,
               child: Column(
                 children: [
-                  _buildInput(_nameController, "Full Name", true),
-                  _buildInput(_emailController, "Email", false, readOnly: true),
-                  _buildInput(_phoneController, "Phone", true),
-                  _buildInput(_genderController, "Gender", false),
-                  const SizedBox(height: 20),
+                  _buildTextField(_nameController, 'Full Name'),
+                  _buildTextField(_emailController, 'Email', keyboardType: TextInputType.emailAddress),
+                  _buildTextField(_phoneController, 'Phone Number', keyboardType: TextInputType.phone),
+                  _buildTextField(_genderController, 'Gender'),
+                  const SizedBox(height: 16),
                   ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.black),
-                    onPressed: _isSaving ? null : _saveProfile,
+                    onPressed: _isSaving ? null : _saveUserProfile,
                     child: _isSaving
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white))
-                        : const Text("Save Changes", style: TextStyle(color: Colors.white)),
-                  ),
-                  TextButton(
-                    onPressed: _changePassword,
-                    child: const Text("Change Password", style: TextStyle(color: Colors.blue)),
+                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('Save Profile'),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 30),
-            const Text("Appointments", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const Divider(color: Colors.black),
-            ..._appointments.map((doc) {
-              final a = doc.data();
-              return Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(a['doctorName'] ?? 'Doctor',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 6),
-                    Text('📅 ${a['date']} at ${a['time']}'),
-                    Text('📍 ${a['location']}'),
-                    Text('📩 ${a['doctorEmail']}'),
-                    Text('📝 ${a['purpose']}'),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: () => _deleteAppointment(doc.id),
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        label: const Text("Delete", style: TextStyle(color: Colors.red)),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-            if (_appointments.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 10),
-                child: Text("No appointments yet.", style: TextStyle(color: Colors.black54)),
-              ),
+            const SizedBox(height: 24),
+            const Text('Appointments', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            _appointments.isEmpty
+                ? const Text('No appointments found.')
+                : ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _appointments.length,
+                    itemBuilder: (context, index) {
+                      final appointment = _appointments[index].data();
+                      return ListTile(
+                        title: Text(appointment['doctorName'] ?? 'Unknown Doctor'),
+                        subtitle: Text(appointment['dateTime'] ?? 'No Date'),
+                      );
+                    },
+                  ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInput(TextEditingController controller, String label, bool required, {bool readOnly = false}) {
+  Widget _buildTextField(TextEditingController controller, String label,
+      {TextInputType keyboardType = TextInputType.text}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: TextFormField(
         controller: controller,
-        readOnly: readOnly,
-        validator: required ? (val) => val == null || val.isEmpty ? 'Required' : null : null,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(color: Colors.black),
-          filled: true,
-          fillColor: Colors.grey[100],
-          enabledBorder: OutlineInputBorder(
-            borderSide: const BorderSide(color: Colors.black),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderSide: const BorderSide(color: Colors.black),
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-        style: const TextStyle(color: Colors.black),
+        keyboardType: keyboardType,
+        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+        validator: (value) => (value == null || value.isEmpty) ? 'Please enter $label' : null,
       ),
     );
   }
